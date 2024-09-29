@@ -325,8 +325,8 @@ def cutout(im, labels, p=0.5):
 
     return labels
 
-
-def mixup(im, im_d, im_inf, labels, im2, labels2):
+# img4, img4_d, img4_inf, labels4
+def mixup(im, im_d, im_inf, labels, im2, im2_d, im2_inf, labels2):
     """
     Applies MixUp augmentation by blending images and labels.
 
@@ -336,6 +336,10 @@ def mixup(im, im_d, im_inf, labels, im2, labels2):
     im = (im * r + im2 * (1 - r)).astype(np.uint8)
     im_d = (im_d * r + im2 * (1 - r)).astype(np.uint8)
     im_inf = (im_inf * r + im2 * (1 - r)).astype(np.uint8)
+    
+    if labels.shape[1] != labels2.shape[1]:
+        raise ValueError(f"Labels batch size mismatch: labels shape {labels.shape}, labels2 shape {labels2.shape}")
+
     labels = np.concatenate((labels, labels2), 0)
     return im, im_d, im_inf, labels
 
