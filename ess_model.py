@@ -50,6 +50,7 @@ from utils.torch_utils import select_device, smart_inference_mode
 def run(
         data,
         weights=None,  # model.pt path(s)
+        weights2=None,
         batch_size=256,  # batch size
         imgsz=640,  # inference size (pixels)
         conf_thres=0.001,  # confidence threshold
@@ -87,9 +88,11 @@ def run(
 
     # Load model
     model = DetectMultiBackend(weights, device=device, dnn=dnn, data=data, fp16=half)
+    model2 = DetectMultiBackend(weights=weights2, device=device, dnn=dnn, data=data, fp16=half)
     stride, pt = model.stride, model.pt
+    stride2, pt2 = model2.stride, model2.pt
     imgsz = check_img_size(imgsz, s=stride)  # check image size
-    print("\nimgsz->", imgsz)
+    imgsz2 = 1280
     # 如果不是CPU，使用半进度(图片半精度/模型半精度)
     half &= pt and device.type != 'cpu'  # half precision only supported by PyTorch on CUDA
     if pt:
@@ -103,9 +106,10 @@ def run(
 
     # Data
     data = check_dataset(data)  # check
-
+    
     # Configure
     model.eval()
+    model2.eval()
     cuda = device.type != 'cpu'
     nc = 1 if single_cls else int(data['nc'])  # number of classes
     iouv = torch.linspace(0.5, 0.95, 10, device=device)  # iou vector for mAP@0.5:0.95
@@ -116,6 +120,8 @@ def run(
         ncm = model.model.nc
         assert ncm == nc, f'{weights} ({ncm} classes) trained on different --data than what you passed ({nc} ' \
                           f'classes). Pass correct combination of --weights and --data that are trained together.'
+    
+    model2.warmup(imgsz=(1 if pt else batch_size, 3, imgsz2 ,imgsz2))
     model.warmup(imgsz=(1 if pt else batch_size, 3, imgsz, imgsz))  # warmup
     pad, rect = (0.0, False) if task == 'speed' else (0.5, pt)  # square inference for benchmarks
     task = task if task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
@@ -123,6 +129,16 @@ def run(
                                    imgsz,
                                    batch_size,
                                    stride,
+                                   single_cls,
+                                   pad=pad,
+                                   rect=rect,
+                                   workers=workers,
+                                #    min_items=opt.min_items,
+                                   prefix=colorstr(f'{task}: '))[0]
+    dataloader2 = create_dataloader(data[task],
+                                   imgsz2,
+                                   batch_size,
+                                   stride2,
                                    single_cls,
                                    pad=pad,
                                    rect=rect,
@@ -172,7 +188,11 @@ def run(
                 path = os.path.join(root, path)
                 with open(path, 'w') as file:
                     for line in p:
+                        cur_line = []
                         for item in line.tolist():
+                            cur_line.append(item)
+                        if(item[-2] < 0.2): continue
+                        for item in cur_line:
                             file.write(str(item) + ' ')
                         file.write('\n')
             zip_file_path = os.path.join(root, 'pred_zip')
@@ -189,11 +209,13 @@ def run(
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default=r"/data1/icpr/dataset/my_trainer.yaml", help='dataset.yaml path')
-    parser.add_argument('--weights', nargs='+', type=str, default=r"/home/chaoyuhao/icpr/ICPR_JNU_MMD/runs/train/exp23/weights/best.pt",
+    parser.add_argument('--weights', nargs='+', type=str, default=r"/home/chaoyuhao/icpr/ICPR_JNU_MMD/runs/train/exp32/weights/best.pt",
                         help='model path(s)')
+    parser.add_argument('--weights2', nargs='+', type=str, default=r"/home/chaoyuhao/icpr/ICPR_JNU_MMD/runs/train/exp23/weights/best.pt",
+                        help='model 2 path(s)')
     parser.add_argument('--batch-size', type=int, default=256, help='batch size')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')
-    parser.add_argument('--conf-thres', type=float, default=0.15, help='confidence threshold')
+    parser.add_argument('--conf-thres', type=float, default=0.001, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.7, help='NMS IoU threshold')
     parser.add_argument('--max-det', type=int, default=300, help='maximum detections per image')
     parser.add_argument('--task', default='test', help='train, val, test, speed or study')
@@ -213,6 +235,7 @@ def parse_opt():
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
     parser.add_argument('--min-items', type=int, default=0, help='Experimental')
+    
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
     opt.save_json |= opt.data.endswith('coco.yaml')

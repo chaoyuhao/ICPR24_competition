@@ -10,4 +10,4 @@
 	- 中间调好了mixup, 调高了mixup的超参数，调低了一点点马赛克, 希望可以有效果，如果效果不佳，下一次使用albumentations手动融合ball和light以及手动放大ball的照片，增强训练
 > mixup 居然真的可以有效提高ball和light的预测准确率
 - exp32: 调高了mixup, 调高了copy-paste(不知道能干啥..), 调高了epoch数量, batch_size 调到16
-
+- exp33: 32又提高了，但我感觉跟mixup关系不大，因为ball, sign预测准确率的提高并不明显，我试着调低lrf，然后再次调高epoch到150，看看效果
