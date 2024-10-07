@@ -9,24 +9,40 @@ exp17: vision with conf_thres 0.05
 exp18: vision with conf_thres 0.15 
 exp19: infra with conf_thres  0.15
 exp20: vision baseline conf_thres 0.001 (max_score)
+exp33: vision new baseline conf_thres 0.25 (best.pt)
+exp34: vision epoch 130 conf_thres 0.25
+exp35: vision epoch 130 conf_thres 0.15
+exp36: vision epoch 131 conf_thres 0.15
+exp37: vision epoch 132 conf_thres 0.15
+exp38: vision epoch 133 conf_thres 0.15
+exp39: vision epoch 134 conf_thres 0.15
+foc1: focal loss (0.47) origin
 """
 
 # imgsz 1280 -> big picture
 big_picture = True
 
-baseline_folder = '/data1/icpr/result/exp20/pred'
+baseline_folder = '/data1/icpr/result/exp33/preds'
 ensemble_folder = [
-    'model 1 result path',
-    'model 2 result path',
-    'model 3 result path',
-    'many path ...'
+    '/data1/icpr/result/exp35/preds',
+    '/data1/icpr/result/exp36/preds',
+    '/data1/icpr/result/exp37/preds',
+    '/data1/icpr/result/exp38/preds',
+    '/data1/icpr/result/exp39/preds'
 ]
 infra_folder = '/data1/icpr/result/exp17/preds'
-target_folder = '/data1/icpr/result/del4'
+target_folder = '/data1/icpr/result/best_ens'
 
 # iou thres for infra and vision ensemble
 iou_thres = 0.2
 
+del_conf  = 0.5
+
+# iou threshold for wbf algorithm
+wbf_iou_thres = 0.65
+
+# conf for missed bbox 
+miss_punish = 0.5
 
 
 def folder_txt_read(folder_path):
@@ -75,34 +91,49 @@ def rawtxt_read(file_path):
 
 # ensemble_path中的大量模型预测结果进行wbf操作
 # wbf求得的新数据在返回值中，写入文件即可
+exclusive_counter = 0
+caught_cnt = 0
+miss_cnt   = 0
 def wbf(ensemble_path, file_name, base_data):
     new_data = []
-    
+
+    pred_file = []
     for path in ensemble_path:
         file_path = os.path.join(path, file_name)
-        pred_data = rawtxt_read(file_path)
+        pred_file.append(rawtxt_read(file_path)) 
         
-        for base_bbox in base_data:
-            bbox_a, conf_a, label_a = base_bbox[:4], base_bbox[4], base_bbox[5]
-            if conf_a < 0.2: continue
-            avg_bbox_base = [base_bbox]
+    for base_bbox in base_data:
+        bbox_a, conf_a, label_a = base_bbox[:4], base_bbox[4], base_bbox[5]
+        if conf_a < del_conf: continue
+        avg_bbox_base = [base_bbox]
+
+        for pred_data in pred_file:
 
             for pred_bbox in pred_data:
                 bbox_b, conf_b, label_b = pred_bbox[:4], pred_bbox[4], pred_bbox[5]
                 iou = get_iou(bbox_a, bbox_b)
-                if iou >= 0.7:
+                if iou >= wbf_iou_thres:
                     avg_bbox_base.append(pred_bbox)
+                    global caught_cnt
+                    caught_cnt += 1
+                    break
+            else:
+                global miss_cnt
+                miss_cnt += 1
+                bbox_b, conf_b, label_b = base_bbox[:4], miss_punish, base_bbox[5]
+                avg_bbox_base.append(bbox_b + [conf_b, label_b])
             
-            # 分别处理 bbox, conf, 和 label
-            bboxes = [bbox for bbox, conf, label in avg_bbox_base]
-            confs  = [conf for bbox, conf, label in avg_bbox_base]
-            labels = [label for bbox, conf, label in avg_bbox_base]
+        # 分别处理 bbox, conf, 和 label
+        bboxes = [line[:4] for line in avg_bbox_base]
+        confs  = [line[4] for line in avg_bbox_base]
+        labels = [line[5] for line in avg_bbox_base]
 
-            avg_bbox_coords = [sum(xory) / len(xory) for xory in zip(*bboxes)]
-            avg_conf = sum(confs) / len(confs)
-            avg_label = Counter(labels).most_common(1)[0][0]
-            avg_bbox = (avg_bbox_coords + [avg_conf, avg_label])
-            new_data.append(avg_bbox)
+        avg_bbox_coords = [sum(xory) / len(xory) for xory in zip(*bboxes)]
+        avg_conf = sum(confs) / len(confs)
+        avg_label = Counter(labels).most_common(1)[0][0]
+        avg_bbox = (avg_bbox_coords + [avg_conf, avg_label])
+        new_data.append(avg_bbox)
+        
 
     return new_data
 
@@ -159,6 +190,7 @@ def add_ensemble(supl_path, supl_conf, gt_path):
 
 # 只是删除掉小于conf_thres的数据
 del_counter = 0
+label_counter = np.zeros(20)
 def conf_filter(file_path, conf_thres):
     new_data = []
     data = rawtxt_read(file_path)
@@ -186,7 +218,9 @@ def save_data(fname, data):
                 f.write(str(item) + ' ')
             f.write('\n')
             
+
 def vision_infra_ens(baseline_path_list, infra_path_list):
+    print(f' iou_thres -> {iou_thres} 🤔')
     counter = 0
     
     for b_path in baseline_path_list:
@@ -222,12 +256,29 @@ def just_del(baseline_path_list, conf_thres):
         save_data(b_name, new_data)
     print(f' {del_counter} bboxes have been deleted ✅')
 
+def best_ensemble(baseline_path_list):
+    
+    print(f' Ensemble {baseline_folder} with: {len(ensemble_folder)} models')
+    print(f' Only average bboxes with iou over {wbf_iou_thres}')
+
+    for ensemble_path in ensemble_folder:
+        print(f' include: {ensemble_path} ✅ ')
+
+    for path in baseline_path_list:
+        b_data = rawtxt_read(path)
+        b_name = os.path.basename(path)
+        new_data = wbf(ensemble_folder, b_name, b_data)
+        save_data(b_name, new_data)
+
+    print(f' average {caught_cnt} bboxes from different models 🤔')
+    print(f' {miss_cnt} box missed 🤔')
 
 if __name__ == '__main__':
-    print(f' iou_thres -> {iou_thres} 🤔')
 
     baseline_path_list = folder_txt_read(baseline_folder)
     infra_path_list = folder_txt_read(infra_folder)
+
+    best_ensemble(baseline_path_list)
 
     # print(baseline_path_list[0])
     # print(infra_path_list[0])
@@ -235,7 +286,7 @@ if __name__ == '__main__':
     # vision_infra_ens(baseline_path_list, infra_path_list)
 
     # 修改conf_thres
-    just_del(baseline_path_list, 0.25)
+    # just_del(baseline_path_list, del_conf)
 
     
     
