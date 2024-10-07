@@ -20,9 +20,9 @@ foc1: focal loss (0.47) origin
 """
 
 # imgsz 1280 -> big picture
-big_picture = True
+big_picture = False
 
-baseline_folder = '/data1/icpr/result/exp33/preds'
+baseline_folder = '/data1/icpr/result/best'
 ensemble_folder = [
     '/data1/icpr/result/exp35/preds',
     '/data1/icpr/result/exp36/preds',
@@ -30,8 +30,8 @@ ensemble_folder = [
     '/data1/icpr/result/exp38/preds',
     '/data1/icpr/result/exp39/preds'
 ]
-infra_folder = '/data1/icpr/result/exp17/preds'
-target_folder = '/data1/icpr/result/best_ens'
+infra_folder = '/data1/icpr/result/foc1/preds'
+target_folder = '/data1/icpr/result/foc_best_ens'
 
 # iou thres for infra and vision ensemble
 iou_thres = 0.2
@@ -123,7 +123,9 @@ def wbf(ensemble_path, file_name, base_data):
                 global miss_cnt
                 miss_cnt += 1
                 flag = True
-                bbox_b, conf_b, label_b = base_bbox[:4], miss_punish, base_bbox[5]
+                # BEST OR NOTHING !
+                bbox_b, conf_b, label_b = base_bbox[:4], base_bbox[4], base_bbox[5]
+                # bbox_b, conf_b, label_b = base_bbox[:4], miss_punish, base_bbox[5]
                 avg_bbox_base.append(bbox_b + [conf_b, label_b])
             
         # 分别处理 bbox, conf, 和 label
@@ -198,6 +200,37 @@ def add_ensemble(supl_path, supl_conf, gt_path):
     
     return new_data
 
+fp1_cnt = 0
+fp2_cnt = 0
+def montage_ensemble(file_path1, conf_thres1, file_path2, conf_thres2):
+
+    new_data = []
+
+    data1 = rawtxt_read(file_path1)
+    data2 = rawtxt_read(file_path2)
+
+    # ball sign light
+    data2_choose = [2.0, 10.0, 11.0]
+
+    for line1 in data1:
+        bbox_a, conf_a, label_a = line1[:4], line1[4], line1[5]
+        if conf_a < conf_thres1: continue
+        if label_a not in data2_choose: 
+            global fp1_cnt
+            fp1_cnt += 1
+            new_data.append(line1)
+    for line2 in data2:
+        bbox_b, conf_b, label_b = line2[:4], line2[4], line2[5]
+        if conf_b < conf_thres2: continue
+        if label_b in data2_choose: 
+            global fp2_cnt
+            fp2_cnt += 1
+            new_data.append(line2)
+    
+    new_data = sorted(new_data, key=lambda x: x[4], reverse=True)
+    
+    return new_data
+
 # 只是删除掉小于conf_thres的数据
 del_counter = 0
 label_counter = np.zeros(20)
@@ -228,6 +261,30 @@ def save_data(fname, data):
                 f.write(str(item) + ' ')
             f.write('\n')
             
+def foc_best_ens(baseline_path_list, infra_path_list):
+    counter = 0
+    
+    for b_path in baseline_path_list:
+        b_name = os.path.basename(b_path)
+        new_data = []
+        for i_path in infra_path_list:
+            i_name = os.path.basename(i_path)
+            if b_name == i_name:
+                counter += 1
+                
+                # 较为平等的融合
+                new_data = montage_ensemble(b_path, 0.5, i_path, 0.2)
+                
+                break
+        else:
+            print(f'没有匹配到相同的文件名 {b_path} and {i_path}')
+            break
+        save_data(b_name, new_data)
+    
+    print(f' {counter} 模型预测结果已融合 ✅')
+    print(f' using {fp1_cnt} bbox from model 1 ')
+    print(f' using {fp2_cnt} bbox from model 2 ')
+    print(f' 结果存储于 {target_folder} 🤺')
 
 def vision_infra_ens(baseline_path_list, infra_path_list):
     print(f' iou_thres -> {iou_thres} 🤔')
@@ -289,13 +346,14 @@ if __name__ == '__main__':
     baseline_path_list = folder_txt_read(baseline_folder)
     infra_path_list = folder_txt_read(infra_folder)
 
-    best_ensemble(baseline_path_list)
+    # best_ensemble(baseline_path_list)
 
     # print(baseline_path_list[0])
     # print(infra_path_list[0])
 
     # vision_infra_ens(baseline_path_list, infra_path_list)
-
+    foc_best_ens(baseline_path_list, infra_path_list)
+    
     # 修改conf_thres
     # just_del(baseline_path_list, del_conf)
 
