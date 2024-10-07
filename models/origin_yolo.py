@@ -69,42 +69,6 @@ except ImportError:
     thop = None
 
 
-class my_module(nn.Module):
-    def __init__(self,channels):
-        super().__init__()
-        # 定义融合模块
-        self.fusion_conv = nn.Conv2d(in_channels=channels*3, 
-                                     out_channels=channels, 
-                                     kernel_size=1)
-        # 定义注意力机制模块
-        self.attention = nn.Sequential(
-            nn.Conv2d(in_channels=channels*3, out_channels=64, kernel_size=1),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=64, out_channels=3, kernel_size=1),
-            nn.Sigmoid()
-        )
-
-    def forward(self, rgb, depth, tir):
-        # 拼接特征
-        concat_features = torch.cat([rgb, depth, tir], dim=1)
-
-        # 通过卷积层进行融合
-        fused_features = self.fusion_conv(concat_features)
-        
-        # 计算注意力权重
-        attention_weights = self.attention(concat_features)
-        attention_weights_rgb, attention_weights_depth, attention_weights_tir = torch.split(attention_weights, 1, dim=1)
-        
-        # 加权融合特征
-        weighted_rgb = attention_weights_rgb * rgb
-        weighted_depth = attention_weights_depth * depth
-        weighted_tir = attention_weights_tir * tir
-        
-        # 融合注意力加权后的特征和卷积融合特征
-        final_features = (weighted_rgb + weighted_depth + weighted_tir) + fused_features
-        
-        return final_features
-
 class Detect(nn.Module):
     # YOLOv5 Detect head for detection models
     stride = None  # strides computed during build
@@ -209,18 +173,13 @@ class BaseModel(nn.Module):
                 self._profile_one_layer(m, rgb, dt1)
                 self._profile_one_layer(m, depth, dt2)
                 self._profile_one_layer(m, tir, dt3)
-            if i == 33: #最后一层(detect层)
+            if i == 24:
                 x = []
                 assert len(rgb) == len(depth) == len(tir)
                 for i in range(len(rgb)):
                     # rgb, depth, tir
                     # concat_fu = torch.cat([rgb[i], depth[i], tir[i]], dim=1)
-
                     x.append(self.MM_fusion(rgb[i], depth[i], tir[i]))
-                    # concat_fu = torch.cat([rgb[i], depth[i], tir[i]], dim=1)
-                    # x.append(self.fusion_conv_3modality[i](concat_fu))
-
-
                     # rgb, depth
                     # print(rgb[i].size())
                     # concat_fu = torch.cat([rgb[i], depth[i]], dim=1)
@@ -285,7 +244,6 @@ class BaseModel(nn.Module):
         return self
 
 
-
 class DetectionModel(BaseModel):
     # YOLOv5 detection model
     def __init__(self, cfg="yolov5s.yaml", ch=3, nc=None, anchors=None):
@@ -325,17 +283,6 @@ class DetectionModel(BaseModel):
         #     nn.Conv2d(256*2, 256, kernel_size=1, stride=1, padding=0),
         #     nn.Conv2d(512*2, 512, kernel_size=1, stride=1, padding=0),
         # )
-
-        # self.fusion_conv_3modality = nn.Sequential(
-        #     nn.Conv2d(320*3, 320, kernel_size=1, stride=1, padding=0),
-        #     nn.Conv2d(640*3, 640, kernel_size=1, stride=1, padding=0),
-        #     nn.Conv2d(1280*3, 1280, kernel_size=1, stride=1, padding=0),
-        # )
-
-        # self.module_1=my_module(320)
-        # self.module_2=my_module(640)
-        # self.module_3=my_module(1280)
-
         if isinstance(m, (Detect, Segment)):
 
             def _forward(x, x_d, x_inf):
@@ -355,23 +302,16 @@ class DetectionModel(BaseModel):
         self.info()
         LOGGER.info("")
     def MM_fusion(self, rgb, depth, tir):
-        # channels=rgb.shape[1]
-        # assert channels in (320, 640, 1280), f"Invalid number of channels: {channels}. Expected 320, 640, or 1280."
-        # if channels==320:
-        #     return self.module_1(rgb,depth,tir)
-        # elif channels==640:
-        #     return self.module_2(rgb,depth,tir)
-        # elif channels==1280:
-        #     return self.module_3(rgb,depth,tir)
-        return rgb        
+        
+        return rgb
 
     def forward(self, x, x_d, x_inf, augment=False, profile=False, visualize=False):
         """Performs single-scale or augmented inference and may include profiling or visualization."""
         if augment:
-            return self._forward_augment(x, x_d, x_inf)  # augmented inference, None
+            return self._forward_augment(x)  # augmented inference, None
         return self._forward_once(x, x_d, x_inf, profile, visualize)  # single-scale inference, train
 
-    def _forward_augment(self, x, x_d, x_inf):
+    def _forward_augment(self, x):
         """Performs augmented inference across different scales and flips, returning combined detections."""
         img_size = x.shape[-2:]  # height, width
         s = [1, 0.83, 0.67]  # scales
@@ -379,10 +319,7 @@ class DetectionModel(BaseModel):
         y = []  # outputs
         for si, fi in zip(s, f):
             xi = scale_img(x.flip(fi) if fi else x, si, gs=int(self.stride.max()))
-            xi_d = scale_img(x_d.flip(fi) if fi else x_d, si, gs=int(self.stride.max()))
-            xi_inf = scale_img(x_inf.flip(fi) if fi else x_inf, si, gs=int(self.stride.max()))
-
-            yi = self._forward_once(xi,xi_d,xi_inf)[0]  # forward
+            yi = self._forward_once(xi)[0]  # forward
             # cv2.imwrite(f'img_{si}.jpg', 255 * xi[0].cpu().numpy().transpose((1, 2, 0))[:, :, ::-1])  # save
             yi = self._descale_pred(yi, fi, si, img_size)
             y.append(yi)

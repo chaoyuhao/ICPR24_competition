@@ -116,6 +116,7 @@ def run(
         ncm = model.model.nc
         assert ncm == nc, f'{weights} ({ncm} classes) trained on different --data than what you passed ({nc} ' \
                           f'classes). Pass correct combination of --weights and --data that are trained together.'
+    print((1 if pt else batch_size, 3, imgsz, imgsz))
     model.warmup(imgsz=(1 if pt else batch_size, 3, imgsz, imgsz))  # warmup
     pad, rect = (0.0, False) if task == 'speed' else (0.5, pt)  # square inference for benchmarks
     task = task if task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
@@ -191,7 +192,7 @@ def parse_opt():
     parser.add_argument('--data', type=str, default=r"/data1/icpr/dataset/my_trainer.yaml", help='dataset.yaml path')
     parser.add_argument('--weights', nargs='+', type=str, default=r"/home/wujunyu/ICPR_JNU_MMD/runs/train/exp21/weights/best.pt",
                         help='model path(s)')
-    parser.add_argument('--batch-size', type=int, default=256, help='batch size')
+    parser.add_argument('--batch-size', type=int, default=2, help='batch size')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=1280, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.25, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.7, help='NMS IoU threshold')
