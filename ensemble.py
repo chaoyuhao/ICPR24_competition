@@ -3,18 +3,31 @@ import numpy as np
 import os
 from collections import Counter
 
-baseline_folder = '/data1/icpr/result/exp18/preds'
-essemble_folder = [
+"""
+exp16: vision with conf_thres 0.005
+exp17: vision with conf_thres 0.05
+exp18: vision with conf_thres 0.15 
+exp19: infra with conf_thres  0.15
+exp20: vision baseline conf_thres 0.001 (max_score)
+"""
+
+# imgsz 1280 -> big picture
+big_picture = True
+
+baseline_folder = '/data1/icpr/result/exp20/pred'
+ensemble_folder = [
     'model 1 result path',
     'model 2 result path',
     'model 3 result path',
     'many path ...'
 ]
-infra_folder = '/data1/icpr/result/exp19/preds'
-target_folder = '/data1/icpr/result/ess2'
+infra_folder = '/data1/icpr/result/exp17/preds'
+target_folder = '/data1/icpr/result/del4'
 
-# iou thres for infra and vision essemble
-iou_thres = 0.45
+# iou thres for infra and vision ensemble
+iou_thres = 0.2
+
+
 
 def folder_txt_read(folder_path):
     txt_list = []
@@ -47,20 +60,25 @@ def get_iou(bbox_a, bbox_b):
 
     return iou
 
+
+def pic_trans(data):
+    if big_picture: return [x / 2 for x in data[:4]] + data[4:]
+    return data
+
 def rawtxt_read(file_path):
     with open(file_path, 'r') as f:
         ret_data = []
         for line in f:
             numbers = list(map(float, line.strip().split()))
-            ret_data.append(numbers)
+            ret_data.append(pic_trans(numbers))
     return ret_data
 
-# essemble_path中的大量模型预测结果进行wbf操作
+# ensemble_path中的大量模型预测结果进行wbf操作
 # wbf求得的新数据在返回值中，写入文件即可
-def wbf(essemble_path, file_name, base_data):
+def wbf(ensemble_path, file_name, base_data):
     new_data = []
     
-    for path in essemble_path:
+    for path in ensemble_path:
         file_path = os.path.join(path, file_name)
         pred_data = rawtxt_read(file_path)
         
@@ -88,10 +106,10 @@ def wbf(essemble_path, file_name, base_data):
 
     return new_data
 
-bbox_ess_counter = 0
+bbox_ens_counter = 0
 # 超过参数 iou_thres 的所有bbox进行融合
 # 两个预测结果地位等同的进行结果融合，但是bbox都用1的，label看谁更自信，conf求均值
-def equal_essemble(file_path1, conf_thres1, file_path2, conf_thres2):
+def equal_ensemble(file_path1, conf_thres1, file_path2, conf_thres2):
 
     new_data = []
 
@@ -106,17 +124,17 @@ def equal_essemble(file_path1, conf_thres1, file_path2, conf_thres2):
             if conf_b < conf_thres2 or get_iou(bbox_a, bbox_b) < iou_thres: continue
             new_label = label_a if label_a == label_b else (label_a if conf_a > conf_b else label_b)
             new_conf  = (conf_a + conf_b) / 2
-            global bbox_ess_counter
-            bbox_ess_counter += 1
+            global bbox_ens_counter
+            bbox_ens_counter += 1
             new_data.append(bbox_a + [new_conf, new_label])
             break
         else: new_data.append(line1)
     
     return new_data
 
-add_ess_counter = 0
+add_ens_counter = 0
 # 如果 model1 中的某一个结果高于conf_thres且与 model2中的每个结果的 bbox 的iou都不超过 iou_thres，那么就将它加入到 model2的预测数据中
-def add_essemble(supl_path, supl_conf, gt_path):
+def add_ensemble(supl_path, supl_conf, gt_path):
     new_data = []
 
     supl_data = rawtxt_read(supl_path)
@@ -130,8 +148,8 @@ def add_essemble(supl_path, supl_conf, gt_path):
             if get_iou(bbox_s, bbox_g) >= iou_thres:
                 break
         else:
-            global add_ess_counter
-            add_ess_counter += 1
+            global add_ens_counter
+            add_ens_counter += 1
             new_data.append(s_line)
 
     for g_line in gt_data:
@@ -140,12 +158,16 @@ def add_essemble(supl_path, supl_conf, gt_path):
     return new_data
 
 # 只是删除掉小于conf_thres的数据
+del_counter = 0
 def conf_filter(file_path, conf_thres):
     new_data = []
     data = rawtxt_read(file_path)
     for line in data:
         bbox, conf, label = line[:4], line[4], line[5]
-        if conf < conf_thres: continue
+        if conf < conf_thres: 
+            global del_counter
+            del_counter += 1
+            continue
         new_data.append(line)
     return new_data
 
@@ -154,9 +176,8 @@ def conf_filter(file_path, conf_thres):
 # 将data写到target_folder下的fname文件中
 def save_data(fname, data):
     if not os.path.exists(target_folder):
-        print(f"创建目标文件夹 {target_folder} ")
         os.makedirs(target_folder)
-    else: print(f"目标文件夹 {target_folder} 已创建。")
+        print(f"目标文件夹 {target_folder} 已创建。")
     
     file_path = os.path.join(target_folder, fname)
     with open(file_path, 'w') as f:
@@ -165,7 +186,7 @@ def save_data(fname, data):
                 f.write(str(item) + ' ')
             f.write('\n')
             
-def vision_infra_ess(baseline_path_list, infra_path_list):
+def vision_infra_ens(baseline_path_list, infra_path_list):
     counter = 0
     
     for b_path in baseline_path_list:
@@ -177,10 +198,10 @@ def vision_infra_ess(baseline_path_list, infra_path_list):
                 counter += 1
                 
                 # 较为平等的融合
-                # new_data = equal_essemble(b_path, 0.2, i_path, 0.4)
+                # new_data = equal_ensemble(b_path, 0.2, i_path, 0.4)
                 
                 # 将infra的结果作为补充
-                new_data = add_essemble(i_path, 0.3, b_path)
+                new_data = add_ensemble(i_path, 0.3, b_path)
 
                 break
         else:
@@ -189,12 +210,21 @@ def vision_infra_ess(baseline_path_list, infra_path_list):
         save_data(b_name, new_data)
     
     print(f' {counter} 模型预测结果已融合 ✅')
-    # print(f' {bbox_ess_counter} bbox 已融合 ✅')
-    print(f' {add_ess_counter} bbox 已添加 ✅')
+    # print(f' {bbox_ens_counter} bbox 已融合 ✅')
+    print(f' {add_ens_counter} bbox 已添加 ✅')
+    print(f' 结果存储于 {target_folder} 🤺')
+
+def just_del(baseline_path_list, conf_thres):
+    print(f' Delete all the predictions (conf < {conf_thres})')
+    for b_path in baseline_path_list:
+        new_data = conf_filter(b_path, conf_thres)
+        b_name = os.path.basename(b_path)
+        save_data(b_name, new_data)
+    print(f' {del_counter} bboxes have been deleted ✅')
 
 
 if __name__ == '__main__':
-    print(f' iou_thres -> {iou_thres}')
+    print(f' iou_thres -> {iou_thres} 🤔')
 
     baseline_path_list = folder_txt_read(baseline_folder)
     infra_path_list = folder_txt_read(infra_folder)
@@ -202,7 +232,10 @@ if __name__ == '__main__':
     # print(baseline_path_list[0])
     # print(infra_path_list[0])
 
-    vision_infra_ess(baseline_path_list, infra_path_list)
+    # vision_infra_ens(baseline_path_list, infra_path_list)
+
+    # 修改conf_thres
+    just_del(baseline_path_list, 0.25)
 
     
     
