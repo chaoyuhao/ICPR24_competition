@@ -39,7 +39,7 @@ iou_thres = 0.2
 del_conf  = 0.5
 
 # iou threshold for wbf algorithm
-wbf_iou_thres = 0.65
+wbf_iou_thres = 0.75
 
 # conf for missed bbox 
 miss_punish = 0.5
@@ -94,6 +94,8 @@ def rawtxt_read(file_path):
 exclusive_counter = 0
 caught_cnt = 0
 miss_cnt   = 0
+incomplete_cnt = 0
+complete_cnt = 0
 def wbf(ensemble_path, file_name, base_data):
     new_data = []
 
@@ -106,7 +108,7 @@ def wbf(ensemble_path, file_name, base_data):
         bbox_a, conf_a, label_a = base_bbox[:4], base_bbox[4], base_bbox[5]
         if conf_a < del_conf: continue
         avg_bbox_base = [base_bbox]
-
+        flag = False
         for pred_data in pred_file:
 
             for pred_bbox in pred_data:
@@ -120,6 +122,7 @@ def wbf(ensemble_path, file_name, base_data):
             else:
                 global miss_cnt
                 miss_cnt += 1
+                flag = True
                 bbox_b, conf_b, label_b = base_bbox[:4], miss_punish, base_bbox[5]
                 avg_bbox_base.append(bbox_b + [conf_b, label_b])
             
@@ -127,6 +130,13 @@ def wbf(ensemble_path, file_name, base_data):
         bboxes = [line[:4] for line in avg_bbox_base]
         confs  = [line[4] for line in avg_bbox_base]
         labels = [line[5] for line in avg_bbox_base]
+        
+        if flag: 
+            global incomplete_cnt
+            incomplete_cnt += 1
+        else:
+            global complete_cnt
+            complete_cnt += 1
 
         avg_bbox_coords = [sum(xory) / len(xory) for xory in zip(*bboxes)]
         avg_conf = sum(confs) / len(confs)
@@ -272,6 +282,7 @@ def best_ensemble(baseline_path_list):
 
     print(f' average {caught_cnt} bboxes from different models 🤔')
     print(f' {miss_cnt} box missed 🤔')
+    print(f' {complete_cnt} complete boxes and {incomplete_cnt} incomplete boxes 🤔')
 
 if __name__ == '__main__':
 
