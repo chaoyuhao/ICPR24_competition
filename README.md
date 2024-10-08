@@ -1,6 +1,6 @@
 # About us
 
-**We are the team of undergraduates from [MCG](mcg.nju.edu.cn) Nanjing University**
+**We are the team of undergraduates from [MCG](https://mcg.nju.edu.cn) Nanjing University**
 
 # Team Members
 
@@ -10,7 +10,7 @@
 
 # Instructor
 
-- [Jie Liu](njulj.github.io)
+- [Jie Liu](https://njulj.github.io)
 
 - Jinwen Liang
 
