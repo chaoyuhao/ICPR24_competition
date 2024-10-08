@@ -1,6 +1,23 @@
-# ICPR Multi-Modal Visual Pattern Recognition Challenge Track 2: Multi-Modal Object Detection
+# About us
 
-# Overview
+**We are the team of undergraduates from [MCG](mcg.nju.edu.cn) Nanjing University**
+
+# Team Members
+
+- Yuhao Chao
+
+- Junyu Wu
+
+# Instructor
+
+- [Jie Liu](njulj.github.io)
+
+- Jinwen Liang
+
+
+---
+
+# ICPR Multi-Modal Visual Pattern Recognition Challenge Track 2: Multi-Modal Object Detection
 
 <div align=center>
   <img src="pics/pic_0.png" width="300" height="300">
